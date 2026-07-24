@@ -15,3 +15,8 @@ __pycache__/
 
 # Generated outputs
 decision_record*.md
+decision_records/
+
+# Local SQLite data
+*.db
+*.db-journal

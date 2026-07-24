@@ -56,14 +56,22 @@
   th { text-align: left; color: var(--text-dim); padding: 8px; border-bottom: 1px solid var(--border); }
   td { padding: 8px; border-bottom: 1px solid rgba(48,54,61,0.5); }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .field label { font-size: 0.8rem; color: var(--text-dim); }
+  .field input, .field select {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
   .stat { text-align: center; padding: 16px; background: rgba(48,54,61,0.3); border-radius: 8px; }
   .stat-value { font-size: 1.5rem; font-weight: 700; }
   .stat-label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
   .placeholder { color: var(--yellow); font-size: 0.75rem; }
-  .wage-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(48,54,61,0.5); }
-  .wage-binding { color: var(--green); font-weight: 600; }
-  .wage-not-binding { color: var(--text-dim); }
-  .controls { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+  .controls { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
   button {
     background: var(--blue);
     color: white;
@@ -78,6 +86,7 @@
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button.danger { background: var(--red); }
   button.success { background: var(--green); }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
   .recovery-text {
     white-space: pre-wrap;
     font-size: 0.85rem;
@@ -108,79 +117,305 @@
   .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
   .badge-real { background: rgba(63,185,80,0.15); color: var(--green); }
   .badge-placeholder { background: rgba(210,153,34,0.15); color: var(--yellow); }
-  #result { min-height: 100px; }
+  .error-text { color: var(--red); font-size: 0.85rem; margin-top: 8px; }
+  .block-list { display: flex; flex-direction: column; gap: 8px; }
+  .block-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    cursor: pointer;
+  }
+  .block-row:hover { border-color: var(--blue); }
+  .block-row.selected { border-color: var(--blue); background: rgba(88,166,255,0.06); }
+  #result { min-height: 40px; }
   .footer { text-align: center; color: var(--text-dim); font-size: 0.8rem; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
 
 <h1>🍓 Gleany</h1>
-<p class="subtitle">Harvest-decision agent for US specialty crop growers · Live USDA AMS data · Deterministic decisions</p>
+<p class="subtitle">Harvest-decision agent for US specialty crop growers · Live USDA AMS data · Your costs, your blocks</p>
 
-<div class="controls">
-  <button id="btn-go" onclick="runEvaluate(false)">▶ Run GO Scenario</button>
-  <button id="btn-abandon" onclick="runEvaluate(true)">⚠ Run ABANDON Scenario</button>
-  <span id="loading-indicator" class="hidden"><span class="spinner"></span> Running...</span>
+<!-- Auth section -->
+<div id="auth-section" class="card">
+  <h2>Sign in</h2>
+  <div class="form-grid">
+    <div class="field"><label>Email</label><input id="auth-email" type="email" placeholder="you@farm.com"></div>
+    <div class="field"><label>Password</label><input id="auth-password" type="password" placeholder="At least 8 characters"></div>
+  </div>
+  <div class="controls">
+    <button onclick="doLogin()">Log in</button>
+    <button class="ghost" onclick="doSignup()">Create account</button>
+  </div>
+  <div id="auth-error" class="error-text hidden"></div>
 </div>
 
-<div id="result"></div>
+<!-- App section (hidden until logged in) -->
+<div id="app-section" class="hidden">
+  <div class="controls">
+    <span id="me-email" style="color:var(--text-dim);"></span>
+    <button class="ghost" onclick="doLogout()">Log out</button>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Your Blocks</h2>
+      <div id="block-list" class="block-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>New Block</h2>
+      <div class="field"><label>Label (e.g. "North 40")</label><input id="nb-label" placeholder="North field"></div>
+      <div class="field"><label>Crop</label><input id="nb-crop" placeholder="strawberry, fresh market"></div>
+      <div class="field"><label>Commodity (AMS name, e.g. Strawberries)</label><input id="nb-commodity" placeholder="Strawberries"></div>
+      <div class="field"><label>State (2-letter)</label><input id="nb-state" placeholder="CA" maxlength="2"></div>
+      <div class="field"><label>Region</label><input id="nb-region" placeholder="Santa Maria, Santa Barbara County, CA"></div>
+      <div class="field"><label>AMS district</label><input id="nb-district" placeholder="Santa Maria"></div>
+      <div class="field"><label>Cross-check district (optional)</label><input id="nb-crosscheck" placeholder="Central Coast"></div>
+      <div class="field"><label>Unit</label><input id="nb-unit" placeholder="flat, 8 x 1 lb containers"></div>
+      <div class="field"><label>Acres standing</label><input id="nb-acres" type="number" step="0.1"></div>
+      <div class="field"><label>Picks remaining</label><input id="nb-picks" type="number"></div>
+      <div class="field"><label>Pick interval</label><input id="nb-interval" placeholder="every 2 to 3 days"></div>
+      <div class="field"><label>Skill level</label>
+        <select id="nb-skill"><option value="entry">Entry</option><option value="experienced">Experienced</option></select>
+      </div>
+      <button onclick="createBlock()">Save block</button>
+      <div id="block-error" class="error-text hidden"></div>
+    </div>
+  </div>
+
+  <div id="cost-panel" class="card hidden">
+    <h2>Your Costs — <span id="cost-panel-block"></span></h2>
+    <p style="font-size:0.85rem;color:var(--text-dim);margin-bottom:12px;">
+      Enter your own numbers. Anything left blank is treated as a placeholder in the
+      decision record — it is never silently filled in for you.
+    </p>
+    <div class="form-grid">
+      <div class="field"><label>Pick rate (flats per person-hour)</label><input id="cp-fph" type="number" step="0.1"></div>
+      <div class="field"><label>Piece rate per flat ($, if used)</label><input id="cp-piece" type="number" step="0.01"></div>
+      <div class="field"><label>Cooling &amp; packing per flat ($)</label><input id="cp-cooling" type="number" step="0.01"></div>
+      <div class="field"><label>Commission (% of price)</label><input id="cp-commission" type="number" step="0.1"></div>
+      <div class="field"><label>Freight per flat ($)</label><input id="cp-freight" type="number" step="0.01"></div>
+      <div class="field"><label>Crew: % domestic</label><input id="cp-domestic" type="number" step="1" value="100"></div>
+      <div class="field"><label>Crew: % H-2A</label><input id="cp-h2a" type="number" step="1" value="0"></div>
+    </div>
+    <div class="controls">
+      <button onclick="saveCosts()">Save costs</button>
+      <button class="ghost" id="btn-evaluate" onclick="runEvaluate()">▶ Evaluate this block</button>
+      <span id="loading-indicator" class="hidden"><span class="spinner"></span> Running...</span>
+    </div>
+    <div id="cost-error" class="error-text hidden"></div>
+  </div>
+
+  <div id="result"></div>
+</div>
 
 <div class="footer">
   Market prices are <strong>real</strong> from live USDA AMS MARS API calls.
-  Grower-side costs are <strong>placeholders</strong> for the demo.
+  Grower-side costs come from what you enter above — nothing is overridden for you.
   The agent gathers, the code decides.
 </div>
 
 <script>
 const API = '';
+let currentBlockId = null;
+let blocks = [];
 
 function fmtMoney(v) {
   if (v === null || v === undefined) return 'N/A';
   return '$' + Number(v).toFixed(2);
 }
-
 function bandClass(band) {
   if (!band) return 'band-LOADING';
   return 'band-' + band;
 }
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+function hideError(id) {
+  document.getElementById(id).classList.add('hidden');
+}
 
-async function runEvaluate(abandonMode) {
-  const btnGo = document.getElementById('btn-go');
-  const btnAbandon = document.getElementById('btn-abandon');
+async function api(path, options = {}) {
+  const resp = await fetch(API + path, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data.detail || resp.statusText);
+  }
+  return data;
+}
+
+// --- Auth ---
+async function doSignup() {
+  hideError('auth-error');
+  try {
+    await api('/api/signup', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: document.getElementById('auth-email').value,
+        password: document.getElementById('auth-password').value,
+      }),
+    });
+    await afterLogin();
+  } catch (e) { showError('auth-error', e.message); }
+}
+
+async function doLogin() {
+  hideError('auth-error');
+  try {
+    await api('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: document.getElementById('auth-email').value,
+        password: document.getElementById('auth-password').value,
+      }),
+    });
+    await afterLogin();
+  } catch (e) { showError('auth-error', e.message); }
+}
+
+async function doLogout() {
+  await api('/api/logout', { method: 'POST' });
+  document.getElementById('auth-section').classList.remove('hidden');
+  document.getElementById('app-section').classList.add('hidden');
+}
+
+async function afterLogin() {
+  const me = await api('/api/me');
+  document.getElementById('me-email').textContent = me.email;
+  document.getElementById('auth-section').classList.add('hidden');
+  document.getElementById('app-section').classList.remove('hidden');
+  await loadBlocks();
+}
+
+// --- Blocks ---
+async function loadBlocks() {
+  blocks = await api('/api/blocks');
+  const list = document.getElementById('block-list');
+  if (blocks.length === 0) {
+    list.innerHTML = '<p style="color:var(--text-dim);font-size:0.85rem;">No blocks yet — create one on the right.</p>';
+    return;
+  }
+  list.innerHTML = blocks.map(b => `
+    <div class="block-row ${b.id === currentBlockId ? 'selected' : ''}" onclick="selectBlock(${b.id})">
+      <div>
+        <strong>${b.grower_label}</strong><br>
+        <span style="color:var(--text-dim);font-size:0.8rem;">${b.crop_label} · ${b.region}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function createBlock() {
+  hideError('block-error');
+  try {
+    const body = {
+      grower_label: document.getElementById('nb-label').value,
+      crop_label: document.getElementById('nb-crop').value,
+      commodity: document.getElementById('nb-commodity').value,
+      state: document.getElementById('nb-state').value.toUpperCase(),
+      region: document.getElementById('nb-region').value,
+      district: document.getElementById('nb-district').value,
+      crosscheck_district: document.getElementById('nb-crosscheck').value || null,
+      unit: document.getElementById('nb-unit').value,
+      acres_standing: parseFloat(document.getElementById('nb-acres').value) || null,
+      picks_remaining: parseInt(document.getElementById('nb-picks').value) || null,
+      pick_interval: document.getElementById('nb-interval').value || null,
+      skill_level: document.getElementById('nb-skill').value,
+    };
+    if (!body.grower_label || !body.crop_label || !body.commodity || !body.state || !body.region || !body.district || !body.unit) {
+      throw new Error('Label, crop, commodity, state, region, district, and unit are required.');
+    }
+    const block = await api('/api/blocks', { method: 'POST', body: JSON.stringify(body) });
+    await loadBlocks();
+    selectBlock(block.id);
+  } catch (e) { showError('block-error', e.message); }
+}
+
+async function selectBlock(blockId) {
+  currentBlockId = blockId;
+  await loadBlocks();
+  const detail = await api(`/api/blocks/${blockId}`);
+  document.getElementById('cost-panel').classList.remove('hidden');
+  document.getElementById('cost-panel-block').textContent = detail.block.grower_label;
+  document.getElementById('result').innerHTML = '';
+
+  const c = detail.latest_costs;
+  document.getElementById('cp-fph').value = c?.flats_per_person_hour ?? '';
+  document.getElementById('cp-piece').value = c?.piece_rate_per_flat ?? '';
+  document.getElementById('cp-cooling').value = c?.cooling_pack_per_flat ?? '';
+  document.getElementById('cp-commission').value = c?.commission_pct ?? '';
+  document.getElementById('cp-freight').value = c?.freight_per_flat ?? '';
+  document.getElementById('cp-domestic').value = c ? (c.domestic_pct * 100) : 100;
+  document.getElementById('cp-h2a').value = c ? (c.h2a_pct * 100) : 0;
+}
+
+// --- Costs ---
+function numOrNull(id) {
+  const v = document.getElementById(id).value;
+  return v === '' ? null : parseFloat(v);
+}
+
+async function saveCosts() {
+  hideError('cost-error');
+  if (!currentBlockId) return;
+  try {
+    const domesticPct = (parseFloat(document.getElementById('cp-domestic').value) || 0) / 100;
+    const h2aPct = (parseFloat(document.getElementById('cp-h2a').value) || 0) / 100;
+    await api(`/api/blocks/${currentBlockId}/costs`, {
+      method: 'POST',
+      body: JSON.stringify({
+        flats_per_person_hour: numOrNull('cp-fph'),
+        piece_rate_per_flat: numOrNull('cp-piece'),
+        cooling_pack_per_flat: numOrNull('cp-cooling'),
+        commission_pct: numOrNull('cp-commission'),
+        freight_per_flat: numOrNull('cp-freight'),
+        domestic_pct: domesticPct,
+        h2a_pct: h2aPct,
+      }),
+    });
+  } catch (e) { showError('cost-error', e.message); }
+}
+
+// --- Evaluate ---
+async function runEvaluate() {
+  if (!currentBlockId) return;
+  const btn = document.getElementById('btn-evaluate');
   const indicator = document.getElementById('loading-indicator');
   const result = document.getElementById('result');
 
-  btnGo.disabled = true;
-  btnAbandon.disabled = true;
+  btn.disabled = true;
   indicator.classList.remove('hidden');
   result.innerHTML = '<div class="band-display band-LOADING"><span class="spinner"></span><br>Fetching live USDA data & computing decision...</div>';
 
   try {
-    const resp = await fetch(API + '/api/evaluate', {
+    // Save costs first so the evaluate call always reflects the form's current values.
+    await saveCosts();
+    const data = await api(`/api/blocks/${currentBlockId}/evaluate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ abandon_mode: abandonMode }),
+      body: JSON.stringify({ external_signals_triggered: false }),
     });
-    const data = await resp.json();
-    renderResult(data, abandonMode);
+    renderResult(data);
   } catch (e) {
     result.innerHTML = '<div class="band-display band-ABANDON">Error: ' + e.message + '</div>';
   } finally {
-    btnGo.disabled = false;
-    btnAbandon.disabled = false;
+    btn.disabled = false;
     indicator.classList.add('hidden');
   }
 }
 
-function renderResult(data, abandonMode) {
+function renderResult(data) {
   const result = document.getElementById('result');
   let html = '';
 
-  // Band display
   html += `<div class="band-display ${bandClass(data.band)}">${data.band}</div>`;
   html += `<p style="text-align:center;margin-bottom:16px;color:var(--text-dim);">${data.band_reason}</p>`;
 
-  // Stats row
   html += '<div class="grid-2" style="margin-bottom:16px;">';
   html += `<div class="stat"><div class="stat-value">${fmtMoney(data.expected_price)}</div><div class="stat-label">Expected Price / flat</div></div>`;
   html += `<div class="stat"><div class="stat-value">${fmtMoney(data.total_cost)}</div><div class="stat-label">Total Cost / flat</div></div>`;
@@ -188,53 +423,45 @@ function renderResult(data, abandonMode) {
   html += `<div class="stat"><div class="stat-value">$${data.binding_wage}/hr</div><div class="stat-label">${data.binding_wage_label}</div></div>`;
   html += '</div>';
 
-  // Block config
   const bc = data.block_config;
   html += '<div class="card"><h2>Block Configuration</h2>';
-  html += `<table><tr><td>Grower ID</td><td>${bc.grower_id}</td></tr>`;
+  html += `<table><tr><td>Label</td><td>${bc.grower_label}</td></tr>`;
   html += `<tr><td>Region</td><td>${bc.region}</td></tr>`;
-  html += `<tr><td>Crop</td><td>${bc.crop}</td></tr>`;
-  html += `<tr><td>Acres standing</td><td>${bc.acres_standing}</td></tr>`;
-  html += `<tr><td>Picks remaining</td><td>${bc.picks_remaining}</td></tr>`;
-  html += `<tr><td>Pick interval</td><td>${bc.pick_interval}</td></tr>`;
+  html += `<tr><td>Crop</td><td>${bc.crop_label}</td></tr>`;
+  html += `<tr><td>Acres standing</td><td>${bc.acres_standing ?? '—'}</td></tr>`;
+  html += `<tr><td>Picks remaining</td><td>${bc.picks_remaining ?? '—'}</td></tr>`;
+  html += `<tr><td>Pick interval</td><td>${bc.pick_interval ?? '—'}</td></tr>`;
   html += `<tr><td>Unit</td><td>${bc.unit}</td></tr></table></div>`;
 
-  // Market prices
   html += '<div class="card"><h2>Market Price Inputs <span class="badge badge-real">LIVE USDA</span></h2>';
   html += `<p style="font-size:0.85rem;color:var(--text-dim);margin-bottom:12px;">Independent sources: <strong>${data.independent_sources}</strong></p>`;
   html += '<table><tr><th>Source</th><th>District</th><th>Organic</th><th>Price Range</th><th>Mostly</th><th>Age (hrs)</th><th>Report Comment</th></tr>';
-  for (const row of data.shipping_prices) {
-    html += priceRow(row);
-  }
-  for (const row of data.terminal_prices) {
+  for (const row of data.price_rows || []) {
     html += priceRow(row);
   }
   html += '</table></div>';
 
-  // Wage floors
   html += '<div class="card"><h2>Wage Floor Selection</h2>';
   html += `<p style="margin-bottom:12px;font-size:0.85rem;">${data.wage_reason}</p>`;
   html += '<table><tr><th>Candidate</th><th>Rate</th><th>Applies To</th><th>Binding?</th><th>Source</th></tr>';
   for (const c of data.wage_candidates) {
-    const binding = c.binding ? '<span class="wage-binding">✅ Yes</span>' : '<span class="wage-not-binding">No</span>';
+    const binding = c.binding ? '<span style="color:var(--green);font-weight:600;">✅ Yes</span>' : '<span style="color:var(--text-dim);">No</span>';
     html += `<tr><td>${c.label}</td><td>$${c.rate}/hr</td><td>${c.applies_to}</td><td>${binding}</td><td style="font-size:0.75rem;">${c.source}</td></tr>`;
   }
   html += '</table></div>';
 
-  // Cost floor
-  html += '<div class="card"><h2>Cost Floor Arithmetic <span class="badge badge-placeholder">PLACEHOLDER COSTS</span></h2>';
+  html += '<div class="card"><h2>Cost Floor Arithmetic <span class="badge badge-real">YOUR COSTS</span></h2>';
   html += '<table><tr><th>Component</th><th>Value</th><th>Source</th></tr>';
   html += `<tr><td>Expected price</td><td>${fmtMoney(data.expected_price)}</td><td>AMS MARS (live)</td></tr>`;
   html += `<tr><td>Binding wage</td><td>$${data.binding_wage}/hr</td><td>${data.binding_wage_label}</td></tr>`;
-  html += `<tr><td>→ Harvest labour / flat</td><td>${fmtMoney(data.harvest_labour)}</td><td>wage / pick rate</td></tr>`;
-  html += `<tr><td>Cooling & packing</td><td>${fmtMoney(data.cooling_pack)}</td><td><span class="placeholder">⚠ PLACEHOLDER</span></td></tr>`;
-  html += `<tr><td>Commission</td><td>${fmtMoney(data.commission)}</td><td><span class="placeholder">⚠ PLACEHOLDER</span></td></tr>`;
-  html += `<tr><td>Freight</td><td>${fmtMoney(data.freight)}</td><td><span class="placeholder">⚠ PLACEHOLDER</span></td></tr>`;
+  html += `<tr><td>→ Harvest labour / flat</td><td>${fmtMoney(data.harvest_labour)}</td><td>wage / your pick rate</td></tr>`;
+  html += `<tr><td>Cooling & packing</td><td>${fmtMoney(data.cooling_pack)}</td><td>your input</td></tr>`;
+  html += `<tr><td>Commission</td><td>${fmtMoney(data.commission)}</td><td>your input</td></tr>`;
+  html += `<tr><td>Freight</td><td>${fmtMoney(data.freight)}</td><td>your input</td></tr>`;
   html += `<tr style="font-weight:700;"><td>Total cost / flat</td><td>${fmtMoney(data.total_cost)}</td><td>sum</td></tr>`;
   html += `<tr style="font-weight:700;"><td>Net / flat</td><td style="color:${data.net_per_flat >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtMoney(data.net_per_flat)}</td><td>price − cost</td></tr>`;
   html += '</table></div>';
 
-  // Recovery + approval gate (only for ABANDON)
   if (data.band === 'ABANDON' && data.recovery) {
     html += '<div class="card"><h2>Recovery Routing</h2>';
     html += `<div class="recovery-text">${escapeHtml(data.recovery)}</div></div>`;
@@ -248,17 +475,12 @@ function renderResult(data, abandonMode) {
     html += '</div></div>';
   }
 
-  // Confidence gate
   if (data.confidence_gated) {
     html += `<div class="card" style="border-color:var(--text-dim);"><h2>Confidence Gate</h2><p style="color:var(--text-dim);">${data.confidence_reason}</p></div>`;
   }
 
   result.innerHTML = html;
-
-  // Store recovery text for send
-  if (data.recovery) {
-    window._recoveryText = data.recovery;
-  }
+  if (data.recovery) window._recoveryText = data.recovery;
 }
 
 function priceRow(row) {
@@ -275,18 +497,14 @@ async function approveSend() {
   const gateBox = document.getElementById('gate-box');
   const text = window._recoveryText || 'Advisory from Gleany harvest-decision agent.';
   gateBox.innerHTML = '<p><span class="spinner"></span> Sending email via Composio Gmail...</p>';
-
   try {
-    const resp = await fetch(API + '/api/send-advisory', {
+    const data = await api('/api/send-advisory', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        recipient: 'sharvineeeducation@gmail.com',
         subject: 'Harvest Advisory: Skip Pick — Recovery Routing Recommended',
         body: text,
       }),
     });
-    const data = await resp.json();
     gateBox.innerHTML = '<p style="color:var(--green);">✅ ' + escapeHtml(data.result) + '</p>';
   } catch (e) {
     gateBox.innerHTML = '<p style="color:var(--red);">Error: ' + e.message + '</p>';
@@ -294,8 +512,7 @@ async function approveSend() {
 }
 
 function abortSend() {
-  const gateBox = document.getElementById('gate-box');
-  gateBox.innerHTML = '<p style="color:var(--red);">❌ Aborted. No advisory sent.</p>';
+  document.getElementById('gate-box').innerHTML = '<p style="color:var(--red);">❌ Aborted. No advisory sent.</p>';
 }
 
 function escapeHtml(text) {
@@ -303,6 +520,13 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+// Try to resume an existing session on load.
+(async () => {
+  try {
+    await afterLogin();
+  } catch (e) { /* not logged in yet */ }
+})();
 </script>
 
 </body>

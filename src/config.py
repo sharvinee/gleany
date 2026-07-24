@@ -88,6 +88,42 @@ DEMO_BLOCK = BlockConfig(
 
 
 # ---------------------------------------------------------------------------
+# AMS commodity -> slug lookup, data-driven (src/db.py: ams_slugs table).
+# Generalizes the old hardcoded SLUG_SHIPPING_POINT / SLUG_LA_TERMINAL pair
+# to any commodity that has rows seeded in the table.
+# ---------------------------------------------------------------------------
+@dataclass
+class AMSSource:
+    slug_id: int
+    report_name: str
+    role: str                  # "primary" or "crosscheck"
+    default_district: str | None
+
+
+def get_ams_sources(commodity: str) -> list[AMSSource]:
+    from .db import get_conn
+
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT slug_id, report_name, role, default_district FROM ams_slugs "
+            "WHERE commodity = ?",
+            (commodity,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        AMSSource(
+            slug_id=r["slug_id"],
+            report_name=r["report_name"],
+            role=r["role"],
+            default_district=r["default_district"],
+        )
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Convenience: load env + return block on import (for tool use)
 # ---------------------------------------------------------------------------
 _env = None

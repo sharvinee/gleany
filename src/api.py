@@ -1,168 +1,328 @@
-"""FastAPI backend for the Gleany demo frontend.
+"""FastAPI backend — self-serve harvest-decision product.
 
-Exposes endpoints that run the deterministic decision pipeline and return
-structured JSON. The frontend is a single HTML page that calls these.
+Each farmer signs up, creates blocks (their own fields), keys in and updates
+their own costs, and evaluates a block against live USDA AMS prices. No
+hardcoded single grower, no demo-only cost overrides — every cost floor
+number here is either a live market price or a value the farmer entered.
 
 Endpoints:
-  GET  /                    → serves the frontend
-  POST /api/evaluate        → runs the decision pipeline (GO or ABANDON)
-  POST /api/send-advisory   → sends the advisory email via Composio (after approval)
-  GET  /api/health          → health check
+  POST /api/signup                       → create a farmer account
+  POST /api/login                        → start a session
+  POST /api/logout                       → end a session
+  GET  /api/me                           → current farmer
+  POST /api/blocks                       → create a block (a farmer's field)
+  GET  /api/blocks                       → list the farmer's blocks
+  GET  /api/blocks/{id}                  → block + latest cost profile
+  POST /api/blocks/{id}/costs            → save a new cost-profile version
+  GET  /api/blocks/{id}/costs/history    → cost-profile version history
+  POST /api/blocks/{id}/evaluate         → run the decision pipeline
+  POST /api/send-advisory                → send the advisory email (after approval)
+  GET  /api/health                       → health check
 """
 
 from __future__ import annotations
 
-import json
-import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from src import auth, repo
 from src.ams import get_ams_price as _get_ams_price
-from src.config import DEMO_BLOCK, SLUG_SHIPPING_POINT, SLUG_LA_TERMINAL
+from src.config import BlockConfig, get_ams_sources
+from src.db import init_db
 from src.decision import decide as _decide, GrowerCosts
 from src.record import write_decision_record as _write_record
-from src.wages import get_wage_floors as _get_wage_floors
 from src.recovery import build_recovery_agent, send_advisory
+from src.wages import get_wage_floors as _get_wage_floors
 
 load_dotenv()
+init_db()
 
-app = FastAPI(title="Gleany", version="0.1.0")
+app = FastAPI(title="Gleany", version="0.2.0")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+RECORDS_DIR = Path(__file__).resolve().parent.parent / "decision_records"
 
 
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class BlockCreateRequest(BaseModel):
+    grower_label: str
+    state: str
+    region: str
+    district: str
+    crosscheck_district: str | None = None
+    commodity: str
+    crop_label: str
+    acres_standing: float | None = None
+    picks_remaining: int | None = None
+    pick_interval: str | None = None
+    unit: str
+    skill_level: str = "entry"
+
+
+class CostProfileRequest(BaseModel):
+    flats_per_person_hour: float | None = None
+    piece_rate_per_flat: float | None = None
+    cooling_pack_per_flat: float | None = None
+    commission_pct: float | None = None
+    freight_per_flat: float | None = None
+    domestic_pct: float = 1.0
+    h2a_pct: float = 0.0
+
+
 class EvaluateRequest(BaseModel):
-    commodity: str = "Strawberries"
-    district: str = "Santa Maria"
-    flats_per_person_hour: float = 5.0
-    cooling_pack_per_flat: float = 1.50
-    commission_pct: float = 12.0
-    freight_per_flat: float = 2.00
-    # Set higher costs to trigger ABANDON
-    abandon_mode: bool = False
+    external_signals_triggered: bool = False
 
 
 class SendAdvisoryRequest(BaseModel):
-    recipient: str = "sharvineeeducation@gmail.com"
     subject: str = "Harvest Advisory: Skip Pick — Recovery Routing Recommended"
     body: str = ""
+    recipient: str | None = None  # defaults to the current farmer's own email
+
+
+def _farmer_dict(row) -> dict[str, Any]:
+    return {"id": row["id"], "email": row["email"]}
+
+
+def _block_dict(row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "grower_label": row["grower_label"],
+        "state": row["state"],
+        "region": row["region"],
+        "district": row["district"],
+        "crosscheck_district": row["crosscheck_district"],
+        "commodity": row["commodity"],
+        "crop_label": row["crop_label"],
+        "acres_standing": row["acres_standing"],
+        "picks_remaining": row["picks_remaining"],
+        "pick_interval": row["pick_interval"],
+        "unit": row["unit"],
+        "skill_level": row["skill_level"],
+    }
+
+
+def _cost_dict(row) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "flats_per_person_hour": row["flats_per_person_hour"],
+        "piece_rate_per_flat": row["piece_rate_per_flat"],
+        "cooling_pack_per_flat": row["cooling_pack_per_flat"],
+        "commission_pct": row["commission_pct"],
+        "freight_per_flat": row["freight_per_flat"],
+        "domestic_pct": row["domestic_pct"],
+        "h2a_pct": row["h2a_pct"],
+        "created_at": row["created_at"],
+    }
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Auth endpoints
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "gleany"}
 
 
-@app.post("/api/evaluate")
-async def evaluate(req: EvaluateRequest) -> dict[str, Any]:
-    """Run the full decision pipeline and return structured results."""
+@app.post("/api/signup")
+async def signup(req: SignupRequest, response: Response):
+    farmer = auth.create_farmer(req.email, req.password)
+    token = auth.create_session(farmer["id"])
+    response.set_cookie(auth.SESSION_COOKIE, token, httponly=True, samesite="lax")
+    return _farmer_dict(farmer)
 
-    # If abandon_mode, use higher costs
-    if req.abandon_mode:
-        cooling = 3.00
-        commission = 20.0
-        freight = 4.00
-    else:
-        cooling = req.cooling_pack_per_flat
-        commission = req.commission_pct
-        freight = req.freight_per_flat
 
-    # 1. Fetch live prices from both sources
-    price_shipping = _get_ams_price(
-        SLUG_SHIPPING_POINT, req.commodity, req.district
-    )
-    price_terminal = _get_ams_price(
-        SLUG_LA_TERMINAL, req.commodity, "Central Coast"
-    )
+@app.post("/api/login")
+async def login(req: LoginRequest, response: Response):
+    farmer = auth.authenticate_farmer(req.email, req.password)
+    token = auth.create_session(farmer["id"])
+    response.set_cookie(auth.SESSION_COOKIE, token, httponly=True, samesite="lax")
+    return _farmer_dict(farmer)
 
-    shipping_rows = []
-    for row in price_shipping.rows:
-        shipping_rows.append({
-            "district": row.district,
-            "organic": row.organic,
-            "low_price": row.low_price,
-            "high_price": row.high_price,
-            "mostly_low": row.mostly_low_price,
-            "mostly_high": row.mostly_high_price,
-            "published_date": row.published_date,
-            "data_age_hours": row.data_age_hours,
-            "rep_cmt": row.rep_cmt,
-            "source": "Fresno Shipping Point (FR_FV110)",
-        })
 
-    terminal_rows = []
-    for row in price_terminal.rows:
-        terminal_rows.append({
-            "district": row.district,
-            "organic": row.organic,
-            "low_price": row.low_price,
-            "high_price": row.high_price,
-            "mostly_low": row.mostly_low_price,
-            "mostly_high": row.mostly_high_price,
-            "published_date": row.published_date,
-            "data_age_hours": row.data_age_hours,
-            "rep_cmt": row.rep_cmt,
-            "source": "LA Terminal Market (HC_FV010)",
-        })
+@app.post("/api/logout")
+async def logout(request: Request, response: Response):
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    if token:
+        auth.destroy_session(token)
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return {"result": "logged out"}
 
-    # 2. Wage floors
-    wages = _get_wage_floors("CA", 2026, "entry")
 
-    wage_candidates = []
-    for c in wages.candidates:
-        wage_candidates.append({
-            "label": c.label,
-            "rate": c.rate,
-            "source": c.source,
-            "applies_to": c.applies_to,
-            "binding": c.binding,
-        })
+@app.get("/api/me")
+async def me(farmer=Depends(auth.require_farmer)):
+    return _farmer_dict(farmer)
 
-    # 3. Grower costs
+
+# ---------------------------------------------------------------------------
+# Block endpoints
+# ---------------------------------------------------------------------------
+@app.post("/api/blocks")
+async def create_block(req: BlockCreateRequest, farmer=Depends(auth.require_farmer)):
+    block = repo.create_block(farmer["id"], req.model_dump())
+    return _block_dict(block)
+
+
+@app.get("/api/blocks")
+async def list_blocks(farmer=Depends(auth.require_farmer)):
+    return [_block_dict(b) for b in repo.list_blocks(farmer["id"])]
+
+
+@app.get("/api/blocks/{block_id}")
+async def get_block(block_id: int, farmer=Depends(auth.require_farmer)):
+    block = repo.get_owned_block(farmer["id"], block_id)
+    latest_costs = repo.get_latest_cost_profile(block_id)
+    return {"block": _block_dict(block), "latest_costs": _cost_dict(latest_costs)}
+
+
+# ---------------------------------------------------------------------------
+# Cost-profile endpoints — this is where the farmer keys in and customizes costs
+# ---------------------------------------------------------------------------
+@app.post("/api/blocks/{block_id}/costs")
+async def save_costs(block_id: int, req: CostProfileRequest, farmer=Depends(auth.require_farmer)):
+    repo.get_owned_block(farmer["id"], block_id)  # 404s if not owned
+    profile = repo.save_cost_profile(block_id, req.model_dump())
+    return _cost_dict(profile)
+
+
+@app.get("/api/blocks/{block_id}/costs/history")
+async def cost_history(block_id: int, farmer=Depends(auth.require_farmer)):
+    repo.get_owned_block(farmer["id"], block_id)
+    return [_cost_dict(c) for c in repo.list_cost_profile_history(block_id)]
+
+
+# ---------------------------------------------------------------------------
+# Evaluate — the decision pipeline, run against a farmer's own block + costs
+# ---------------------------------------------------------------------------
+@app.post("/api/blocks/{block_id}/evaluate")
+async def evaluate(block_id: int, req: EvaluateRequest, farmer=Depends(auth.require_farmer)) -> dict[str, Any]:
+    block = repo.get_owned_block(farmer["id"], block_id)
+    cost_row = repo.get_latest_cost_profile(block_id)
+    if cost_row is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No cost profile saved for this block yet. Save your costs before evaluating.",
+        )
+
+    # 1. Fetch live prices from every AMS source registered for this commodity.
+    ams_sources = get_ams_sources(block["commodity"])
+    if not ams_sources:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No AMS report sources configured for commodity '{block['commodity']}'.",
+        )
+
+    price_results = []
+    price_rows_out: list[dict] = []
+    for source in ams_sources:
+        district = block["district"] if source.role == "primary" else (
+            block["crosscheck_district"] or source.default_district or block["district"]
+        )
+        result = _get_ams_price(source.slug_id, block["commodity"], district)
+        price_results.append(result)
+        for row in result.rows:
+            price_rows_out.append({
+                "district": row.district,
+                "organic": row.organic,
+                "low_price": row.low_price,
+                "high_price": row.high_price,
+                "mostly_low": row.mostly_low_price,
+                "mostly_high": row.mostly_high_price,
+                "published_date": row.published_date,
+                "data_age_hours": row.data_age_hours,
+                "rep_cmt": row.rep_cmt,
+                "source": f"{source.report_name} [{source.role}]",
+            })
+
+    # 2. Wage floors — scoped to the block's own state and skill level.
+    wages = _get_wage_floors(block["state"], datetime.now().year, block["skill_level"])
+
+    wage_candidates = [
+        {"label": c.label, "rate": c.rate, "source": c.source, "applies_to": c.applies_to, "binding": c.binding}
+        for c in wages.candidates
+    ]
+
+    # 3. Grower costs — entirely the farmer's own saved values. Any field left
+    #    blank is None and cost_floor.py records it as a placeholder; nothing
+    #    here is a scripted demo override.
     grower_costs = GrowerCosts(
-        flats_per_person_hour=req.flats_per_person_hour,
-        cooling_pack_per_flat=cooling,
-        commission_pct=commission,
-        freight_per_flat=freight,
-        costs_are_placeholders=True,
-        notes=["ALL grower-side costs are placeholders for the demo."],
+        flats_per_person_hour=cost_row["flats_per_person_hour"],
+        cooling_pack_per_flat=cost_row["cooling_pack_per_flat"],
+        commission_pct=cost_row["commission_pct"],
+        freight_per_flat=cost_row["freight_per_flat"],
+        external_signals_triggered=req.external_signals_triggered,
+        costs_are_placeholders=False,
+        notes=[],
+    )
+
+    block_config = BlockConfig(
+        grower_id=block["grower_label"],
+        region=block["region"],
+        crop=block["crop_label"],
+        acres_standing=block["acres_standing"] or 0,
+        picks_remaining=block["picks_remaining"] or 0,
+        pick_interval=block["pick_interval"] or "",
+        unit=block["unit"],
+        crew_composition={"domestic": cost_row["domestic_pct"], "h2a": cost_row["h2a_pct"]},
     )
 
     # 4. Decide
-    result = _decide(
-        DEMO_BLOCK, [price_shipping, price_terminal], wages, grower_costs
+    result = _decide(block_config, price_results, wages, grower_costs)
+
+    # 5. Write the decision record — one file per block, plus a DB audit row
+    #    per run so a farmer's history isn't lost even though the file itself
+    #    only reflects the latest run.
+    RECORDS_DIR.mkdir(parents=True, exist_ok=True)
+    record_path = RECORDS_DIR / f"block_{block_id}.md"
+    _write_record(result, record_path)
+    repo.record_decision_run(
+        block_id=block_id,
+        cost_profile_id=cost_row["id"],
+        band=result.band.value,
+        net_per_flat=result.net_per_flat,
+        expected_price=result.expected_price,
+        record_path=str(record_path.resolve()),
     )
 
-    # 5. Write decision record
-    record_path = Path("decision_record.md")
-    _write_record(result, record_path)
-
-    # 6. If ABANDON, run recovery agent
+    # 6. If ABANDON, run recovery agent parametrized by this block.
     recovery_text = None
     if result.band.value == "ABANDON":
         try:
-            recovery_agent = build_recovery_agent()
+            recovery_agent = build_recovery_agent(
+                region=block["region"],
+                crop=block["crop_label"],
+                acres_standing=block["acres_standing"],
+                picks_remaining=block["picks_remaining"],
+            )
             recovery_result = recovery_agent.invoke({
                 "messages": [{
                     "role": "user",
                     "content": (
-                        f"A grower in Santa Maria, CA is abandoning a strawberry pick. "
-                        f"48 acres, 9 picks remaining, fresh market strawberries in "
-                        f"flats of 8 one-pound containers. The price doesn't cover "
-                        f"harvest labour. Find food banks and processors that can "
-                        f"take the crop within the perishability window. Draft a "
-                        f"routing recommendation and advisory text."
+                        f"A grower in {block['region']} is abandoning a "
+                        f"{block['crop_label']} pick. {block['acres_standing']} acres, "
+                        f"{block['picks_remaining']} picks remaining, unit {block['unit']}. "
+                        f"The price doesn't cover harvest labour. Find food banks and "
+                        f"processors that can take the crop within the perishability "
+                        f"window. Draft a routing recommendation and advisory text."
                     ),
                 }]
             })
@@ -187,17 +347,8 @@ async def evaluate(req: EvaluateRequest) -> dict[str, Any]:
         "independent_sources": result.input_trace.independent_source_count,
         "confidence_gated": result.confidence_gated,
         "confidence_reason": result.confidence_reason,
-        "shipping_prices": shipping_rows,
-        "terminal_prices": terminal_rows,
-        "block_config": {
-            "grower_id": DEMO_BLOCK.grower_id,
-            "region": DEMO_BLOCK.region,
-            "crop": DEMO_BLOCK.crop,
-            "acres_standing": DEMO_BLOCK.acres_standing,
-            "picks_remaining": DEMO_BLOCK.picks_remaining,
-            "pick_interval": DEMO_BLOCK.pick_interval,
-            "unit": DEMO_BLOCK.unit,
-        },
+        "price_rows": price_rows_out,
+        "block_config": _block_dict(block),
         "recovery": recovery_text,
         "summary": result.summary,
         "record_path": str(record_path.resolve()),
@@ -205,13 +356,10 @@ async def evaluate(req: EvaluateRequest) -> dict[str, Any]:
 
 
 @app.post("/api/send-advisory")
-async def send_advisory_endpoint(req: SendAdvisoryRequest) -> dict[str, str]:
+async def send_advisory_endpoint(req: SendAdvisoryRequest, farmer=Depends(auth.require_farmer)) -> dict[str, str]:
     """Send the advisory email via Composio. Called only after human approval."""
-    result = send_advisory(
-        recipient=req.recipient,
-        subject=req.subject,
-        body=req.body,
-    )
+    recipient = req.recipient or farmer["email"]
+    result = send_advisory(recipient=recipient, subject=req.subject, body=req.body)
     return {"result": result}
 
 

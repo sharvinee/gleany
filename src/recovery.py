@@ -22,8 +22,6 @@ from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 
-from .config import DEMO_BLOCK
-
 
 # ---------------------------------------------------------------------------
 # Recovery tools
@@ -116,7 +114,8 @@ def search_processors(commodity: str, region: str) -> str:
 # ---------------------------------------------------------------------------
 # Recovery agent prompt
 # ---------------------------------------------------------------------------
-RECOVERY_PROMPT = f"""\
+def _build_recovery_prompt(region: str, crop: str, acres_standing, picks_remaining) -> str:
+    return f"""\
 You are a crop recovery routing agent. You are invoked ONLY when the harvest
 decision agent has determined that a block should be ABANDONED — the crop is
 not worth picking for the fresh market.
@@ -129,10 +128,10 @@ measured in days. A gleaning match that arrives two days late is worthless.
 
 ## The block
 
-- Region: {DEMO_BLOCK.region}
-- Crop: {DEMO_BLOCK.crop}
-- Acres standing: {DEMO_BLOCK.acres_standing}
-- Picks remaining: {DEMO_BLOCK.picks_remaining}
+- Region: {region}
+- Crop: {crop}
+- Acres standing: {acres_standing}
+- Picks remaining: {picks_remaining}
 
 ## Recovery channels (in priority order)
 
@@ -166,22 +165,30 @@ can handle today, processor takes the rest.
 """
 
 
-def build_recovery_agent(model_name: str = "gpt-4o"):
-    """Build and return the recovery routing agent.
+def build_recovery_agent(
+    model_name: str = "gpt-4o",
+    region: str = "",
+    crop: str = "",
+    acres_standing=None,
+    picks_remaining=None,
+):
+    """Build and return the recovery routing agent for a specific block.
 
     This is a second create_agent instance with its own tools and prompt.
-    Called only on the ABANDON branch.
+    Called only on the ABANDON branch, parametrized by the block actually
+    being evaluated rather than a fixed demo block.
     """
     load_dotenv()
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set.")
 
+    prompt = _build_recovery_prompt(region, crop, acres_standing, picks_remaining)
     model = ChatOpenAI(model=model_name, api_key=api_key, temperature=0)
     agent = create_agent(
         model,
         [search_food_banks, search_processors],
-        system_prompt=RECOVERY_PROMPT,
+        system_prompt=prompt,
     )
     return agent
 
