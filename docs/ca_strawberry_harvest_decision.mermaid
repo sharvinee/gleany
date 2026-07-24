@@ -1,0 +1,70 @@
+flowchart TD
+
+    TRIG["Per-pick run during harvest season<br/>California strawberry, Santa Maria<br/>picked every 2 to 3 days"] --> BLK["Load block config<br/>grower: Santa Maria, Santa Barbara Co<br/>acres standing: 48<br/>picks remaining: 9<br/>crop: strawberry, fresh market"]
+
+    BLK --> FLOOR
+    BLK --> MKT
+    BLK --> OCT
+
+    subgraph FLOOR["Cost floor, DOL, CA DIR, grower inputs"]
+        W1["Candidate floor A<br/>OEWS-derived AEWR entry: 16.45 per hr"]
+        W2["Candidate floor B<br/>after 3.00 housing adjustment: 13.45"]
+        W3["Candidate floor C<br/>CA minimum wage 2026: 16.90"]
+        BIND["Binding floor = highest applicable<br/>entry level: 16.90 per hr<br/>record which bound and why"]
+        W1 --> BIND
+        W2 --> BIND
+        W3 --> BIND
+        PICK["Grower pick rate<br/>placeholder: flats per person hour"]
+        PACK["Cooling and packing per flat<br/>placeholder"]
+        COMM["Marketer or shipper commission<br/>placeholder"]
+        FRT["Freight lane, Santa Maria to LA or east<br/>placeholder"]
+    end
+
+    subgraph MKT["USDA AMS MARS, structured, 1 to 2 day lag"]
+        SP["Shipping point price<br/>CA strawberry, flat 8 x 1 lb<br/>slug_id TBD, hardcode before build"]
+        TERM["Terminal market price<br/>LA, SF, Chicago, NY"]
+        MOVE["Movement report<br/>arrivals by origin"]
+        AGE["Attach data_age_hours<br/>from report published date"]
+        SP --> AGE
+        TERM --> AGE
+        MOVE --> AGE
+    end
+
+    subgraph OCT["Octen, real time unstructured, same day"]
+        CANCEL["Buyer or retailer order cancellations"]
+        COMP["Competing district status<br/>Watsonville early, Oxnard winding down"]
+        SURGE["Border crossing volumes and shipper chatter"]
+        BULL["Grower association and marketer bulletins"]
+    end
+
+    FLOOR --> EXT
+    MKT --> EXT
+    OCT --> EXT
+
+    EXT["OpenAI extraction<br/>text to structured rows<br/>source sentence retained"] --> GATE{"Confidence gate<br/>2 or more independent sources?<br/>data age acceptable?"}
+
+    GATE -->|"no"| SILENT["Stay silent<br/>record why in decision record"]
+    GATE -->|"yes"| CALC["Compute net return per flat<br/>price minus harvest labor<br/>minus cooling, commission, freight"]
+
+    CALC --> BAND{"Which band?"}
+
+    BAND -->|"net positive"| GO["Pick as planned<br/>no alert"]
+    BAND -->|"net near zero<br/>and cancellation or surge"| PART["Advisory: partial pick<br/>first grade only<br/>shorten crew day<br/>reassess next pick"]
+    BAND -->|"net negative<br/>below labor cost alone"| APPR{"Human approval<br/>deepagents interrupt"}
+
+    APPR -->|"approved"| ABAND["Advisory: skip this pick<br/>48 acres standing<br/>marketable but uneconomic"]
+    APPR -->|"declined"| LOG
+
+    ABAND --> REC["Recovery routing<br/>OpenAI drafts offer<br/>Composio sends<br/>window is hours, not days"]
+
+    REC --> GLEAN["Gleaning org and food bank<br/>Food Forward, Hidden Harvest,<br/>CAFB Farm to Family<br/>capacity and timing check"]
+    REC --> PROC["Processor channel<br/>freezing, puree, juice<br/>pays less, absorbs volume"]
+
+    PART --> DEL["Composio delivery<br/>SMS and email to grower<br/>plus crew leader"]
+    GO --> LOG
+    SILENT --> LOG
+    DEL --> LOG
+    GLEAN --> LOG
+    PROC --> LOG
+
+    LOG["Decision record<br/>inputs, binding wage floor, computed floor,<br/>decision, evidence with source sentences,<br/>data age, timestamp"] --> REV["End of season review<br/>picks skipped, volume recovered,<br/>dollars not spent picking at a loss"]

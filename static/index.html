@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gleany — Harvest Decision Agent</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --blue: #58a6ff;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.8rem; margin-bottom: 4px; }
+  h2 { font-size: 1.1rem; margin-bottom: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  h3 { font-size: 1rem; margin-bottom: 8px; }
+  .subtitle { color: var(--text-dim); font-size: 0.95rem; margin-bottom: 24px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .band-display {
+    text-align: center;
+    padding: 24px;
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    font-size: 1.4rem;
+    font-weight: 700;
+    border: 2px solid;
+  }
+  .band-GO { color: var(--green); border-color: var(--green); background: rgba(63,185,80,0.08); }
+  .band-ABANDON { color: var(--red); border-color: var(--red); background: rgba(248,81,73,0.08); }
+  .band-PARTIAL { color: var(--yellow); border-color: var(--yellow); background: rgba(210,153,34,0.08); }
+  .band-SILENT { color: var(--text-dim); border-color: var(--border); background: rgba(139,148,158,0.05); }
+  .band-LOADING { color: var(--blue); border-color: var(--blue); background: rgba(88,166,255,0.05); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; color: var(--text-dim); padding: 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px; border-bottom: 1px solid rgba(48,54,61,0.5); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .stat { text-align: center; padding: 16px; background: rgba(48,54,61,0.3); border-radius: 8px; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+  .placeholder { color: var(--yellow); font-size: 0.75rem; }
+  .wage-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(48,54,61,0.5); }
+  .wage-binding { color: var(--green); font-weight: 600; }
+  .wage-not-binding { color: var(--text-dim); }
+  .controls { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+  button {
+    background: var(--blue);
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.danger { background: var(--red); }
+  button.success { background: var(--green); }
+  .recovery-text {
+    white-space: pre-wrap;
+    font-size: 0.85rem;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 12px;
+    background: rgba(48,54,61,0.3);
+    border-radius: 8px;
+  }
+  .gate-box {
+    border: 2px solid var(--yellow);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-top: 16px;
+    text-align: center;
+  }
+  .gate-box p { margin-bottom: 12px; color: var(--yellow); }
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+  .badge-real { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-placeholder { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  #result { min-height: 100px; }
+  .footer { text-align: center; color: var(--text-dim); font-size: 0.8rem; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>🍓 Gleany</h1>
+<p class="subtitle">Harvest-decision agent for US specialty crop growers · Live USDA AMS data · Deterministic decisions</p>
+
+<div class="controls">
+  <button id="btn-go" onclick="runEvaluate(false)">▶ Run GO Scenario</button>
+  <button id="btn-abandon" onclick="runEvaluate(true)">⚠ Run ABANDON Scenario</button>
+  <span id="loading-indicator" class="hidden"><span class="spinner"></span> Running...</span>
+</div>
+
+<div id="result"></div>
+
+<div class="footer">
+  Market prices are <strong>real</strong> from live USDA AMS MARS API calls.
+  Grower-side costs are <strong>placeholders</strong> for the demo.
+  The agent gathers, the code decides.
+</div>
+
+<script>
+const API = '';
+
+function fmtMoney(v) {
+  if (v === null || v === undefined) return 'N/A';
+  return '$' + Number(v).toFixed(2);
+}
+
+function bandClass(band) {
+  if (!band) return 'band-LOADING';
+  return 'band-' + band;
+}
+
+async function runEvaluate(abandonMode) {
+  const btnGo = document.getElementById('btn-go');
+  const btnAbandon = document.getElementById('btn-abandon');
+  const indicator = document.getElementById('loading-indicator');
+  const result = document.getElementById('result');
+
+  btnGo.disabled = true;
+  btnAbandon.disabled = true;
+  indicator.classList.remove('hidden');
+  result.innerHTML = '<div class="band-display band-LOADING"><span class="spinner"></span><br>Fetching live USDA data & computing decision...</div>';
+
+  try {
+    const resp = await fetch(API + '/api/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ abandon_mode: abandonMode }),
+    });
+    const data = await resp.json();
+    renderResult(data, abandonMode);
+  } catch (e) {
+    result.innerHTML = '<div class="band-display band-ABANDON">Error: ' + e.message + '</div>';
+  } finally {
+    btnGo.disabled = false;
+    btnAbandon.disabled = false;
+    indicator.classList.add('hidden');
+  }
+}
+
+function renderResult(data, abandonMode) {
+  const result = document.getElementById('result');
+  let html = '';
+
+  // Band display
+  html += `<div class="band-display ${bandClass(data.band)}">${data.band}</div>`;
+  html += `<p style="text-align:center;margin-bottom:16px;color:var(--text-dim);">${data.band_reason}</p>`;
+
+  // Stats row
+  html += '<div class="grid-2" style="margin-bottom:16px;">';
+  html += `<div class="stat"><div class="stat-value">${fmtMoney(data.expected_price)}</div><div class="stat-label">Expected Price / flat</div></div>`;
+  html += `<div class="stat"><div class="stat-value">${fmtMoney(data.total_cost)}</div><div class="stat-label">Total Cost / flat</div></div>`;
+  html += `<div class="stat"><div class="stat-value" style="color:${data.net_per_flat >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtMoney(data.net_per_flat)}</div><div class="stat-label">Net / flat</div></div>`;
+  html += `<div class="stat"><div class="stat-value">$${data.binding_wage}/hr</div><div class="stat-label">${data.binding_wage_label}</div></div>`;
+  html += '</div>';
+
+  // Block config
+  const bc = data.block_config;
+  html += '<div class="card"><h2>Block Configuration</h2>';
+  html += `<table><tr><td>Grower ID</td><td>${bc.grower_id}</td></tr>`;
+  html += `<tr><td>Region</td><td>${bc.region}</td></tr>`;
+  html += `<tr><td>Crop</td><td>${bc.crop}</td></tr>`;
+  html += `<tr><td>Acres standing</td><td>${bc.acres_standing}</td></tr>`;
+  html += `<tr><td>Picks remaining</td><td>${bc.picks_remaining}</td></tr>`;
+  html += `<tr><td>Pick interval</td><td>${bc.pick_interval}</td></tr>`;
+  html += `<tr><td>Unit</td><td>${bc.unit}</td></tr></table></div>`;
+
+  // Market prices
+  html += '<div class="card"><h2>Market Price Inputs <span class="badge badge-real">LIVE USDA</span></h2>';
+  html += `<p style="font-size:0.85rem;color:var(--text-dim);margin-bottom:12px;">Independent sources: <strong>${data.independent_sources}</strong></p>`;
+  html += '<table><tr><th>Source</th><th>District</th><th>Organic</th><th>Price Range</th><th>Mostly</th><th>Age (hrs)</th><th>Report Comment</th></tr>';
+  for (const row of data.shipping_prices) {
+    html += priceRow(row);
+  }
+  for (const row of data.terminal_prices) {
+    html += priceRow(row);
+  }
+  html += '</table></div>';
+
+  // Wage floors
+  html += '<div class="card"><h2>Wage Floor Selection</h2>';
+  html += `<p style="margin-bottom:12px;font-size:0.85rem;">${data.wage_reason}</p>`;
+  html += '<table><tr><th>Candidate</th><th>Rate</th><th>Applies To</th><th>Binding?</th><th>Source</th></tr>';
+  for (const c of data.wage_candidates) {
+    const binding = c.binding ? '<span class="wage-binding">✅ Yes</span>' : '<span class="wage-not-binding">No</span>';
+    html += `<tr><td>${c.label}</td><td>$${c.rate}/hr</td><td>${c.applies_to}</td><td>${binding}</td><td style="font-size:0.75rem;">${c.source}</td></tr>`;
+  }
+  html += '</table></div>';
+
+  // Cost floor
+  html += '<div class="card"><h2>Cost Floor Arithmetic <span class="badge badge-placeholder">PLACEHOLDER COSTS</span></h2>';
+  html += '<table><tr><th>Component</th><th>Value</th><th>Source</th></tr>';
+  html += `<tr><td>Expected price</td><td>${fmtMoney(data.expected_price)}</td><td>AMS MARS (live)</td></tr>`;
+  html += `<tr><td>Binding wage</td><td>$${data.binding_wage}/hr</td><td>${data.binding_wage_label}</td></tr>`;
+  html += `<tr><td>→ Harvest labour / flat</td><td>${fmtMoney(data.harvest_labour)}</td><td>wage / pick rate</td></tr>`;
+  html += `<tr><td>Cooling & packing</td><td>${fmtMoney(data.cooling_pack)}</td><td><span class="placeholder">⚠ PLACEHOLDER</span></td></tr>`;
+  html += `<tr><td>Commission</td><td>${fmtMoney(data.commission)}</td><td><span class="placeholder">⚠ PLACEHOLDER</span></td></tr>`;
+  html += `<tr><td>Freight</td><td>${fmtMoney(data.freight)}</td><td><span class="placeholder">⚠ PLACEHOLDER</span></td></tr>`;
+  html += `<tr style="font-weight:700;"><td>Total cost / flat</td><td>${fmtMoney(data.total_cost)}</td><td>sum</td></tr>`;
+  html += `<tr style="font-weight:700;"><td>Net / flat</td><td style="color:${data.net_per_flat >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtMoney(data.net_per_flat)}</td><td>price − cost</td></tr>`;
+  html += '</table></div>';
+
+  // Recovery + approval gate (only for ABANDON)
+  if (data.band === 'ABANDON' && data.recovery) {
+    html += '<div class="card"><h2>Recovery Routing</h2>';
+    html += `<div class="recovery-text">${escapeHtml(data.recovery)}</div></div>`;
+
+    html += '<div class="gate-box" id="gate-box">';
+    html += '<p>⚠️ HUMAN APPROVAL REQUIRED</p>';
+    html += '<p style="color:var(--text);">The agent drafted an advisory but has <strong>NOT</strong> sent it.<br>You must approve before anything is sent.</p>';
+    html += '<div style="display:flex;gap:12px;justify-content:center;">';
+    html += '<button class="danger" id="btn-abort" onclick="abortSend()">Abort</button>';
+    html += '<button class="success" id="btn-approve" onclick="approveSend()">✅ Approve & Send Email</button>';
+    html += '</div></div>';
+  }
+
+  // Confidence gate
+  if (data.confidence_gated) {
+    html += `<div class="card" style="border-color:var(--text-dim);"><h2>Confidence Gate</h2><p style="color:var(--text-dim);">${data.confidence_reason}</p></div>`;
+  }
+
+  result.innerHTML = html;
+
+  // Store recovery text for send
+  if (data.recovery) {
+    window._recoveryText = data.recovery;
+  }
+}
+
+function priceRow(row) {
+  const range = row.low_price !== null && row.high_price !== null
+    ? '$' + row.low_price + ' – $' + row.high_price : 'not quoted';
+  const mostly = row.mostly_low !== null && row.mostly_high !== null
+    ? '$' + row.mostly_low + (row.mostly_low !== row.mostly_high ? ' – $' + row.mostly_high : '') : '—';
+  const organic = row.organic ? 'Yes' : 'No';
+  const cmt = row.rep_cmt ? row.rep_cmt.substring(0, 60) : '';
+  return `<tr><td style="font-size:0.75rem;">${row.source}</td><td>${row.district}</td><td>${organic}</td><td>${range}</td><td>${mostly}</td><td>${row.data_age_hours}h</td><td style="font-size:0.75rem;color:var(--text-dim);">${cmt}</td></tr>`;
+}
+
+async function approveSend() {
+  const gateBox = document.getElementById('gate-box');
+  const text = window._recoveryText || 'Advisory from Gleany harvest-decision agent.';
+  gateBox.innerHTML = '<p><span class="spinner"></span> Sending email via Composio Gmail...</p>';
+
+  try {
+    const resp = await fetch(API + '/api/send-advisory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: 'sharvineeeducation@gmail.com',
+        subject: 'Harvest Advisory: Skip Pick — Recovery Routing Recommended',
+        body: text,
+      }),
+    });
+    const data = await resp.json();
+    gateBox.innerHTML = '<p style="color:var(--green);">✅ ' + escapeHtml(data.result) + '</p>';
+  } catch (e) {
+    gateBox.innerHTML = '<p style="color:var(--red);">Error: ' + e.message + '</p>';
+  }
+}
+
+function abortSend() {
+  const gateBox = document.getElementById('gate-box');
+  gateBox.innerHTML = '<p style="color:var(--red);">❌ Aborted. No advisory sent.</p>';
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+</script>
+
+</body>
+</html>

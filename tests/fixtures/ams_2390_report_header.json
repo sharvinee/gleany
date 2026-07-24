@@ -1,0 +1,30 @@
+{
+  "reportSection": "Report Header",
+  "reportSections": [
+    "Report Header",
+    "Report Details"
+  ],
+  "stats": {
+    "returnedRows": 1,
+    "userAllowedRows": 100000,
+    "totalRows": 1,
+    "last": "1 report"
+  },
+  "results": [
+    {
+      "report_begin_date": "07/23/2026",
+      "report_end_date": "07/23/2026",
+      "report_date": "07/23/2026",
+      "published_Date": "07/23/2026 15:18:39",
+      "market_type": "Shipping Point",
+      "state": "N/A",
+      "city": "Fresno (FR) FOB SC",
+      "slug_id": 2390,
+      "slug_name": "FR_FV110",
+      "report_title": "Fresno Shipping Point Fruit Prices (FR_FV110)",
+      "final_ind": "Final",
+      "report_narrative": "Atwater, CA        Sunny                 59-96F\nCoachella, CA     Sunny                 93-116F\nFresno, CA          Sunny                 67-98F\nLivingston, CA    Sunny                 58-96F\nOxnard, CA         Sunny                 66-77F\nSan Diego, CA    Partly Cloudy     70-79F\nIrapuato, MX      Sunny                  55-89F\nBaja, CA MX      Sunny                 70-90F\nSan Quintin  (North Baja CA, MX) Partly Cloudy 68-78F",
+      "special_notes": null
+    }
+  ]
+}

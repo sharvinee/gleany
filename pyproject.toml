@@ -1,0 +1,17 @@
+[project]
+name = "gleany"
+version = "0.1.0"
+description = "Harvest-decision agent for US specialty crop growers"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langchain",
+    "langchain-openai",
+    "openai",
+    "httpx",
+    "python-dotenv",
+    "pytest",
+    "composio-core>=0.7.21",
+    "composio-langchain>=0.18.0",
+    "uvicorn>=0.51.0",
+]

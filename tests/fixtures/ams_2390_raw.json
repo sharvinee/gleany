@@ -1,0 +1,90 @@
+{
+  "reportSection": "Report Header",
+  "reportSections": [
+    "Report Header",
+    "Report Details"
+  ],
+  "stats": {
+    "returnedRows": 5,
+    "userAllowedRows": 100000,
+    "totalRows": 5,
+    "last": "5 reports"
+  },
+  "results": [
+    {
+      "report_begin_date": "07/23/2026",
+      "report_end_date": "07/23/2026",
+      "report_date": "07/23/2026",
+      "published_Date": "07/23/2026 15:18:39",
+      "market_type": "Shipping Point",
+      "state": "N/A",
+      "city": "Fresno (FR) FOB SC",
+      "slug_id": 2390,
+      "slug_name": "FR_FV110",
+      "report_title": "Fresno Shipping Point Fruit Prices (FR_FV110)",
+      "final_ind": "Final",
+      "report_narrative": "Atwater, CA        Sunny                 59-96F\nCoachella, CA     Sunny                 93-116F\nFresno, CA          Sunny                 67-98F\nLivingston, CA    Sunny                 58-96F\nOxnard, CA         Sunny                 66-77F\nSan Diego, CA    Partly Cloudy     70-79F\nIrapuato, MX      Sunny                  55-89F\nBaja, CA MX      Sunny                 70-90F\nSan Quintin  (North Baja CA, MX) Partly Cloudy 68-78F",
+      "special_notes": null
+    },
+    {
+      "report_begin_date": "07/22/2026",
+      "report_end_date": "07/22/2026",
+      "report_date": "07/22/2026",
+      "published_Date": "07/22/2026 13:55:30",
+      "market_type": "Shipping Point",
+      "state": "N/A",
+      "city": "Fresno (FR) FOB SC",
+      "slug_id": 2390,
+      "slug_name": "FR_FV110",
+      "report_title": "Fresno Shipping Point Fruit Prices (FR_FV110)",
+      "final_ind": "Final",
+      "report_narrative": "Atwater, CA        Sunny                 59-95F\nCoachella, CA     Sunny                 89-112F\nFresno, CA          Sunny                 65-99F\nLivingston, CA    Sunny                 58-95F\nOxnard, CA         Cloudy                65-77F\nSan Diego, CA    Cloudy                70-79F\nIrapuato, MX      Sunny                  55-88F\nBaja, CA MX      Partly Cloudy     68-85F\nSan Quintin  (North Baja CA, MX) Cloudy 68-79F",
+      "special_notes": null
+    },
+    {
+      "report_begin_date": "07/21/2026",
+      "report_end_date": "07/21/2026",
+      "report_date": "07/21/2026",
+      "published_Date": "07/21/2026 14:13:58",
+      "market_type": "Shipping Point",
+      "state": "N/A",
+      "city": "Fresno (FR) FOB SC",
+      "slug_id": 2390,
+      "slug_name": "FR_FV110",
+      "report_title": "Fresno Shipping Point Fruit Prices (FR_FV110)",
+      "final_ind": "Final",
+      "report_narrative": "Coachella, CA     Sunny                 85-110F\nFresno, CA          Sunny                 74-103F\nLivingston, CA    Sunny                 68-103F\nOxnard, CA         Partly Cloudy     67-78F\nSan Diego, CA    Partly Cloudy     72-82F\nIrapuato, MX      Partly Cloudy     55-89F\nBaja, CA MX      Partly Cloudy     69-87F\nSan Quintin  (North Baja CA, MX) Cloudy 69-81F",
+      "special_notes": null
+    },
+    {
+      "report_begin_date": "07/20/2026",
+      "report_end_date": "07/20/2026",
+      "report_date": "07/20/2026",
+      "published_Date": "07/20/2026 15:45:30",
+      "market_type": "Shipping Point",
+      "state": "N/A",
+      "city": "Fresno (FR) FOB SC",
+      "slug_id": 2390,
+      "slug_name": "FR_FV110",
+      "report_title": "Fresno Shipping Point Fruit Prices (FR_FV110)",
+      "final_ind": "Final",
+      "report_narrative": "Atwater, CA       Sunny                 69-99F\nCoachella, CA    Showers             86-108F\nFresno, CA         Sunny                74-102F\nLivingston, CA   Sunny                68-98F\nOxnard, CA        Partly Cloudy    65-77F\nSan Diego, CA   Mostly Cloudy   69-80F\nIrapuato, MX     Partly Cloudy     57-84F\nBaja, CA MX      Partly Cloudy    69-88F\nSan Quintin  (North Baja CA, MX) Partly Cloudy 66-79F",
+      "special_notes": null
+    },
+    {
+      "report_begin_date": "07/17/2026",
+      "report_end_date": "07/17/2026",
+      "report_date": "07/17/2026",
+      "published_Date": "07/17/2026 14:57:49",
+      "market_type": "Shipping Point",
+      "state": "N/A",
+      "city": "Fresno (FR) FOB SC",
+      "slug_id": 2390,
+      "slug_name": "FR_FV110",
+      "report_title": "Fresno Shipping Point Fruit Prices (FR_FV110)",
+      "final_ind": "Final",
+      "report_narrative": "Atwater,     CA: Sunny  64-97\nCoachella,   CA: Mostly Sunny 85-104\nFresno,      CA: Sunny  68-99\nLivingston,  CA: Sunny  63-96\nOxnard,      CA: Sunny  65-77\nSan Diego,   CA: Sunny  68-76\nIrapuato,    MX: Cloudy 60-80\nBaja CA,     MX: Partly Cloudy 69-81\nSan Quintin (North Baja CA, MX): Mostly Sunny 69-76",
+      "special_notes": null
+    }
+  ]
+}
